@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+mport { useState, useEffect } from "react";
 
 /* ─── SAMPLE DATA ─── */
 const SAMPLE = [
@@ -26,17 +26,20 @@ const SRC = {
 /* ─── 썸네일 URL 추출 ─── */
 function getThumbnail(url, source) {
   try {
+    // 유튜브: 공식 썸네일 API (빠르고 확실)
     if (source === "youtube") {
       let videoId = null;
       const u = new URL(url);
       if (u.hostname.includes("youtu.be")) videoId = u.pathname.slice(1).split("?")[0];
+      else if (u.pathname.includes("/shorts/")) videoId = u.pathname.split("/shorts/")[1]?.split("?")[0];
+      else if (u.pathname.includes("/live/")) videoId = u.pathname.split("/live/")[1]?.split("?")[0];
       else videoId = u.searchParams.get("v");
-      if (videoId) return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+      if (videoId) return { type: "direct", src: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` };
     }
-    // 인스타·틱톡은 웹에서 불러오기 불가 → null
+    // 인스타·틱톡: 완전 차단, 폴백만
     if (source === "instagram" || source === "tiktok") return null;
-    // 그 외(블로그, 핀터레스트 등) → favicon 기반 폴백
-    return null;
+    // 나머지(핀터레스트, 블로그 등): microlink API로 OG이미지 추출
+    return { type: "microlink", src: `https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=false&screenshot=false` };
   } catch { return null; }
 }
 
@@ -112,52 +115,82 @@ function Rabbit({ mood = "normal", size = 100 }) {
 }
 
 /* ─── THUMBNAIL 컴포넌트 ─── */
-function Thumb({ url, source, catEmoji, category }) {
-  const [imgSrc, setImgSrc] = useState(() => getThumbnail(url, source));
+function Thumb({ url, source }) {
+  const thumb = getThumbnail(url, source);
+  const [imgSrc, setImgSrc] = useState(thumb?.type === "direct" ? thumb.src : null);
   const [failed, setFailed] = useState(false);
-  const src = SRC[source] || SRC.default;
+  const [loading, setLoading] = useState(thumb?.type === "microlink");
+  const srcInfo = SRC[source] || SRC.default;
+  const bgMap = { instagram:"#fce4ec", youtube:"#ffebee", tiktok:"#f3e5f5", pinterest:"#fce4ec", blog:"#e8f5e9", default:"#F2F2F7" };
 
-  if (imgSrc && !failed) {
+  useEffect(() => {
+    if (thumb?.type !== "microlink") return;
+    fetch(thumb.src)
+      .then(r => r.json())
+      .then(d => {
+        const img = d?.data?.image?.url || d?.data?.screenshot?.url;
+        if (img) setImgSrc(img);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [url]);
+
+  if (loading) {
     return (
-      <div style={S.gridThumb}>
-        <img
-          src={imgSrc}
-          alt=""
-          style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10 }}
-          onError={() => setFailed(true)}
-        />
+      <div style={{ ...S.gridThumb, background: bgMap[source]||bgMap.default }}>
+        <span style={{ fontSize: 18, opacity: 0.4 }}>⏳</span>
       </div>
     );
   }
-  // 폴백: 소스 아이콘 + 배경
-  const bgMap = { instagram: "#fce4ec", youtube: "#ffebee", tiktok: "#f3e5f5", pinterest: "#fce4ec", blog: "#e8f5e9", default: "#F2F2F7" };
+  if (imgSrc && !failed) {
+    return (
+      <div style={{ ...S.gridThumb, overflow:"hidden" }}>
+        <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:10 }}
+          onError={() => setFailed(true)}/>
+      </div>
+    );
+  }
   return (
-    <div style={{ ...S.gridThumb, background: bgMap[source] || bgMap.default, flexDirection: "column", gap: 2 }}>
-      <span style={{ fontSize: 26 }}>{src.icon}</span>
-      {(source === "instagram" || source === "tiktok") && (
-        <span style={{ fontSize: 9, color: "#999", fontWeight: 500 }}>앱에서 확인</span>
-      )}
+    <div style={{ ...S.gridThumb, background: bgMap[source]||bgMap.default, flexDirection:"column", gap:2 }}>
+      <span style={{ fontSize: 26 }}>{srcInfo.icon}</span>
+      {(source === "instagram" || source === "tiktok") &&
+        <span style={{ fontSize: 9, color:"#999", fontWeight:500 }}>앱에서 확인</span>}
     </div>
   );
 }
 
 /* ─── LIST THUMB ─── */
 function ListThumb({ url, source }) {
-  const [imgSrc, setImgSrc] = useState(() => getThumbnail(url, source));
+  const thumb = getThumbnail(url, source);
+  const [imgSrc, setImgSrc] = useState(thumb?.type === "direct" ? thumb.src : null);
   const [failed, setFailed] = useState(false);
-  const src = SRC[source] || SRC.default;
-  const bgMap = { instagram: "#fce4ec", youtube: "#ffebee", tiktok: "#f3e5f5", pinterest: "#fce4ec", blog: "#e8f5e9", default: "#F2F2F7" };
+  const [loading, setLoading] = useState(thumb?.type === "microlink");
+  const srcInfo = SRC[source] || SRC.default;
+  const bgMap = { instagram:"#fce4ec", youtube:"#ffebee", tiktok:"#f3e5f5", pinterest:"#fce4ec", blog:"#e8f5e9", default:"#F2F2F7" };
+
+  useEffect(() => {
+    if (thumb?.type !== "microlink") return;
+    fetch(thumb.src)
+      .then(r => r.json())
+      .then(d => {
+        const img = d?.data?.image?.url || d?.data?.screenshot?.url;
+        if (img) setImgSrc(img);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [url]);
 
   if (imgSrc && !failed) {
     return (
-      <div style={{ ...S.listThumb, overflow: "hidden" }}>
-        <img src={imgSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={() => setFailed(true)}/>
+      <div style={{ ...S.listThumb, overflow:"hidden" }}>
+        <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}
+          onError={() => setFailed(true)}/>
       </div>
     );
   }
   return (
-    <div style={{ ...S.listThumb, background: bgMap[source] || bgMap.default }}>
-      <span style={{ fontSize: 20 }}>{src.icon}</span>
+    <div style={{ ...S.listThumb, background: bgMap[source]||bgMap.default }}>
+      <span style={{ fontSize: loading ? 14 : 20 }}>{loading ? "⏳" : srcInfo.icon}</span>
     </div>
   );
 }
