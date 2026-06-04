@@ -1,4 +1,4 @@
-mport { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 /* ─── SAMPLE DATA ─── */
 const SAMPLE = [
@@ -114,44 +114,64 @@ function Rabbit({ mood = "normal", size = 100 }) {
   );
 }
 
-/* ─── THUMBNAIL 컴포넌트 ─── */
-function Thumb({ url, source }) {
-  const thumb = getThumbnail(url, source);
-  const [imgSrc, setImgSrc] = useState(thumb?.type === "direct" ? thumb.src : null);
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(thumb?.type === "microlink");
-  const srcInfo = SRC[source] || SRC.default;
+/* ─── 공통 썸네일 훅 ─── */
+function useThumbSrc(url, source) {
   const bgMap = { instagram:"#fce4ec", youtube:"#ffebee", tiktok:"#f3e5f5", pinterest:"#fce4ec", blog:"#e8f5e9", default:"#F2F2F7" };
+  const [imgSrc, setImgSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (thumb?.type !== "microlink") return;
-    fetch(thumb.src)
+    setImgSrc(null);
+    setFailed(false);
+    // 유튜브: 바로 URL 계산
+    if (source === "youtube") {
+      try {
+        let videoId = null;
+        const u = new URL(url);
+        if (u.hostname.includes("youtu.be")) videoId = u.pathname.slice(1).split("?")[0];
+        else if (u.pathname.includes("/shorts/")) videoId = u.pathname.split("/shorts/")[1]?.split("?")[0];
+        else if (u.pathname.includes("/live/")) videoId = u.pathname.split("/live/")[1]?.split("?")[0];
+        else videoId = u.searchParams.get("v");
+        if (videoId) setImgSrc(`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`);
+      } catch {}
+      return;
+    }
+    // 인스타·틱톡: 포기
+    if (source === "instagram" || source === "tiktok") return;
+    // 나머지: microlink
+    setLoading(true);
+    fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=false&screenshot=false`)
       .then(r => r.json())
       .then(d => {
-        const img = d?.data?.image?.url || d?.data?.screenshot?.url;
+        const img = d?.data?.image?.url;
         if (img) setImgSrc(img);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [url]);
+  }, [url, source]);
 
-  if (loading) {
-    return (
-      <div style={{ ...S.gridThumb, background: bgMap[source]||bgMap.default }}>
-        <span style={{ fontSize: 18, opacity: 0.4 }}>⏳</span>
-      </div>
-    );
-  }
-  if (imgSrc && !failed) {
-    return (
-      <div style={{ ...S.gridThumb, overflow:"hidden" }}>
-        <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:10 }}
-          onError={() => setFailed(true)}/>
-      </div>
-    );
-  }
+  return { imgSrc, failed, setFailed, loading, bg: bgMap[source] || bgMap.default };
+}
+
+/* ─── THUMBNAIL 컴포넌트 ─── */
+function Thumb({ url, source }) {
+  const { imgSrc, failed, setFailed, loading, bg } = useThumbSrc(url, source);
+  const srcInfo = SRC[source] || SRC.default;
+
+  if (loading) return (
+    <div style={{ ...S.gridThumb, background: bg }}>
+      <span style={{ fontSize: 18, opacity: 0.3 }}>⏳</span>
+    </div>
+  );
+  if (imgSrc && !failed) return (
+    <div style={{ ...S.gridThumb, overflow:"hidden" }}>
+      <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:10 }}
+        onError={() => setFailed(true)}/>
+    </div>
+  );
   return (
-    <div style={{ ...S.gridThumb, background: bgMap[source]||bgMap.default, flexDirection:"column", gap:2 }}>
+    <div style={{ ...S.gridThumb, background: bg, flexDirection:"column", gap:2 }}>
       <span style={{ fontSize: 26 }}>{srcInfo.icon}</span>
       {(source === "instagram" || source === "tiktok") &&
         <span style={{ fontSize: 9, color:"#999", fontWeight:500 }}>앱에서 확인</span>}
@@ -161,35 +181,17 @@ function Thumb({ url, source }) {
 
 /* ─── LIST THUMB ─── */
 function ListThumb({ url, source }) {
-  const thumb = getThumbnail(url, source);
-  const [imgSrc, setImgSrc] = useState(thumb?.type === "direct" ? thumb.src : null);
-  const [failed, setFailed] = useState(false);
-  const [loading, setLoading] = useState(thumb?.type === "microlink");
+  const { imgSrc, failed, setFailed, loading, bg } = useThumbSrc(url, source);
   const srcInfo = SRC[source] || SRC.default;
-  const bgMap = { instagram:"#fce4ec", youtube:"#ffebee", tiktok:"#f3e5f5", pinterest:"#fce4ec", blog:"#e8f5e9", default:"#F2F2F7" };
 
-  useEffect(() => {
-    if (thumb?.type !== "microlink") return;
-    fetch(thumb.src)
-      .then(r => r.json())
-      .then(d => {
-        const img = d?.data?.image?.url || d?.data?.screenshot?.url;
-        if (img) setImgSrc(img);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [url]);
-
-  if (imgSrc && !failed) {
-    return (
-      <div style={{ ...S.listThumb, overflow:"hidden" }}>
-        <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}
-          onError={() => setFailed(true)}/>
-      </div>
-    );
-  }
+  if (imgSrc && !failed) return (
+    <div style={{ ...S.listThumb, overflow:"hidden" }}>
+      <img src={imgSrc} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}
+        onError={() => setFailed(true)}/>
+    </div>
+  );
   return (
-    <div style={{ ...S.listThumb, background: bgMap[source]||bgMap.default }}>
+    <div style={{ ...S.listThumb, background: bg }}>
       <span style={{ fontSize: loading ? 14 : 20 }}>{loading ? "⏳" : srcInfo.icon}</span>
     </div>
   );
